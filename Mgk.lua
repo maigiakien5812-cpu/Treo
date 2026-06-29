@@ -1,10 +1,11 @@
 loadstring(game:HttpGet("https://raw.githubusercontent.com/gumanba/Scripts/main/MergeaNuke"))()
--- FPS Counter + Lag Reducer v2 - LocalScript
+-- FPS Counter + Lag Reducer v3 - LocalScript
 -- Đặt vào: StarterPlayerScripts
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local Stats = game:GetService("Stats")
 
@@ -18,9 +19,11 @@ if existing then existing:Destroy() end
 -- ============================================================
 -- BIẾN TRẠNG THÁI
 -- ============================================================
-local lagEnabled = false
-local panelOpen = true  -- trạng thái thu gọn panel fix lag
-local hiddenObjects = {} -- lưu các object đã ẩn để restore
+local lagEnabled  = false
+local nukeEnabled = false
+local panelOpen   = true
+local hiddenObjects = {}
+local isAnimating = false
 
 -- ============================================================
 -- GUI SETUP
@@ -32,40 +35,47 @@ gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = playerGui
 
--- Main Frame (tự resize theo nội dung)
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 190, 0, 0)
+frame.Size = UDim2.new(0, 155, 0, 0)
 frame.AutomaticSize = Enum.AutomaticSize.Y
 frame.AnchorPoint = Vector2.new(0.5, 0.5)
 frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-frame.BackgroundTransparency = 0.15
+frame.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
+frame.BackgroundTransparency = 0.1
 frame.BorderSizePixel = 0
+frame.ClipsDescendants = true
 frame.Parent = gui
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+-- stroke viền mỏng cho đẹp
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(60, 60, 70)
+stroke.Thickness = 1
+stroke.Transparency = 0.5
+stroke.Parent = frame
 
 local layout = Instance.new("UIListLayout")
 layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Padding = UDim.new(0, 4)
+layout.Padding = UDim.new(0, 3)
 layout.Parent = frame
 
 local padding = Instance.new("UIPadding")
-padding.PaddingTop = UDim.new(0, 8)
-padding.PaddingBottom = UDim.new(0, 8)
-padding.PaddingLeft = UDim.new(0, 8)
-padding.PaddingRight = UDim.new(0, 8)
+padding.PaddingTop    = UDim.new(0, 6)
+padding.PaddingBottom = UDim.new(0, 6)
+padding.PaddingLeft   = UDim.new(0, 7)
+padding.PaddingRight  = UDim.new(0, 7)
 padding.Parent = frame
 
 -- ============================================================
--- HELPER: Label & Button
+-- HELPERS
 -- ============================================================
 local function makeLabel(text, color, order)
 	local l = Instance.new("TextLabel")
-	l.Size = UDim2.new(1, 0, 0, 22)
+	l.Size = UDim2.new(1, 0, 0, 18)
 	l.BackgroundTransparency = 1
 	l.Font = Enum.Font.GothamBold
 	l.TextScaled = false
-	l.TextSize = 14
+	l.TextSize = 12
 	l.TextXAlignment = Enum.TextXAlignment.Left
 	l.Text = text
 	l.TextColor3 = color or Color3.fromRGB(255, 255, 255)
@@ -74,110 +84,121 @@ local function makeLabel(text, color, order)
 	return l
 end
 
-local function makeButton(text, color, order)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1, 0, 0, 28)
-	b.BackgroundColor3 = color or Color3.fromRGB(50, 50, 50)
-	b.BorderSizePixel = 0
-	b.Font = Enum.Font.GothamBold
-	b.TextSize = 13
-	b.Text = text
-	b.TextColor3 = Color3.fromRGB(255, 255, 255)
-	b.LayoutOrder = order or 0
-	b.Parent = frame
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
-	return b
-end
-
--- Divider
 local function makeDivider(order)
 	local d = Instance.new("Frame")
 	d.Size = UDim2.new(1, 0, 0, 1)
-	d.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	d.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
 	d.BorderSizePixel = 0
 	d.LayoutOrder = order
 	d.Parent = frame
 	return d
 end
 
+local function makeSubButton(parent, text, color, order)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, 0, 0, 24)
+	b.BackgroundColor3 = color or Color3.fromRGB(45, 45, 50)
+	b.BorderSizePixel = 0
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 11
+	b.Text = text
+	b.TextColor3 = Color3.fromRGB(240, 240, 240)
+	b.LayoutOrder = order or 0
+	b.Parent = parent
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+	return b
+end
+
 -- ============================================================
--- LABELS & BUTTONS
+-- FPS / PING LABELS
 -- ============================================================
-local fpsLabel    = makeLabel("FPS: --",  Color3.fromRGB(0, 255, 0), 1)
-local pingLabel   = makeLabel("Ping: --", Color3.fromRGB(100, 200, 255), 2)
+local fpsLabel  = makeLabel("FPS: --",  Color3.fromRGB(0, 230, 0),   1)
+local pingLabel = makeLabel("Ping: --", Color3.fromRGB(80, 185, 255), 2)
 
 makeDivider(3)
 
--- Header row: "Fix Lag" + nút thu gọn
+-- ============================================================
+-- HEADER ROW (Fix Lag + collapse btn)
+-- ============================================================
 local headerRow = Instance.new("Frame")
-headerRow.Size = UDim2.new(1, 0, 0, 28)
+headerRow.Size = UDim2.new(1, 0, 0, 22)
 headerRow.BackgroundTransparency = 1
 headerRow.LayoutOrder = 4
 headerRow.Parent = frame
 
 local headerTitle = Instance.new("TextLabel")
-headerTitle.Size = UDim2.new(1, -36, 1, 0)
-headerTitle.Position = UDim2.new(0, 0, 0, 0)
+headerTitle.Size = UDim2.new(1, -28, 1, 0)
 headerTitle.BackgroundTransparency = 1
 headerTitle.Font = Enum.Font.GothamBold
-headerTitle.TextSize = 13
+headerTitle.TextSize = 11
 headerTitle.TextXAlignment = Enum.TextXAlignment.Left
 headerTitle.Text = "⚙️ Fix Lag"
-headerTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+headerTitle.TextColor3 = Color3.fromRGB(170, 170, 180)
 headerTitle.Parent = headerRow
 
 local collapseBtn = Instance.new("TextButton")
-collapseBtn.Size = UDim2.new(0, 30, 0, 24)
-collapseBtn.Position = UDim2.new(1, -30, 0.5, -12)
-collapseBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+collapseBtn.Size = UDim2.new(0, 22, 0, 20)
+collapseBtn.Position = UDim2.new(1, -22, 0.5, -10)
+collapseBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 48)
 collapseBtn.BorderSizePixel = 0
 collapseBtn.Font = Enum.Font.GothamBold
-collapseBtn.TextSize = 14
+collapseBtn.TextSize = 10
 collapseBtn.Text = "▲"
-collapseBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+collapseBtn.TextColor3 = Color3.fromRGB(180, 180, 190)
 collapseBtn.Parent = headerRow
-Instance.new("UICorner", collapseBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UICorner", collapseBtn).CornerRadius = UDim.new(0, 5)
 
--- Panel chứa các nút fix lag (có thể thu gọn)
+-- ============================================================
+-- LAG PANEL (có tween)
+-- ============================================================
 local lagPanel = Instance.new("Frame")
-lagPanel.Size = UDim2.new(1, 0, 0, 0)
-lagPanel.AutomaticSize = Enum.AutomaticSize.Y
+lagPanel.Size = UDim2.new(1, 0, 0, 0)   -- height sẽ tween
 lagPanel.BackgroundTransparency = 1
+lagPanel.ClipsDescendants = true
 lagPanel.LayoutOrder = 5
 lagPanel.Parent = frame
 
 local lagPanelLayout = Instance.new("UIListLayout")
 lagPanelLayout.SortOrder = Enum.SortOrder.LayoutOrder
-lagPanelLayout.Padding = UDim.new(0, 4)
+lagPanelLayout.Padding = UDim.new(0, 3)
 lagPanelLayout.Parent = lagPanel
 
-local function makeSubButton(text, color, order)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1, 0, 0, 28)
-	b.BackgroundColor3 = color or Color3.fromRGB(50, 50, 50)
-	b.BorderSizePixel = 0
-	b.Font = Enum.Font.GothamBold
-	b.TextSize = 13
-	b.Text = text
-	b.TextColor3 = Color3.fromRGB(255, 255, 255)
-	b.LayoutOrder = order or 0
-	b.Parent = lagPanel
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
-	return b
-end
+local lagBtn   = makeSubButton(lagPanel, "⚡ Bật Giảm Lag",       Color3.fromRGB(35, 90, 35),  1)
+local nukeBtn  = makeSubButton(lagPanel, "💣 Xoá Vật Thể (Mạnh)", Color3.fromRGB(110, 35, 35), 2)
+local resetBtn = makeSubButton(lagPanel, "↺ Reset Tất Cả",        Color3.fromRGB(50, 50, 55),  3)
 
-local lagBtn   = makeSubButton("⚡ Bật Giảm Lag",       Color3.fromRGB(40, 100, 40),  1)
-local nukeBtn  = makeSubButton("💣 Xoá Vật Thể (Mạnh)", Color3.fromRGB(120, 40, 40),  2)
-local resetBtn = makeSubButton("↺ Reset Tất Cả",        Color3.fromRGB(60, 60, 60),   3)
+-- Tính chiều cao thật của panel khi mở
+-- 3 buttons x 24 + 2 gaps x 3 + padding top 3 = ~81
+local PANEL_OPEN_H  = 24*3 + 3*2 + 3  -- 81
+local PANEL_CLOSE_H = 0
 
--- ============================================================
--- THU GỌN / MỞ RỘNG PANEL FIX LAG
--- ============================================================
-local function setPanelOpen(open)
+local tweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local function setPanelOpen(open, instant)
+	if isAnimating and not instant then return end
+	isAnimating = true
 	panelOpen = open
-	lagPanel.Visible = open
 	collapseBtn.Text = open and "▲" or "▼"
+
+	local targetH = open and PANEL_OPEN_H or PANEL_CLOSE_H
+	if instant then
+		lagPanel.Size = UDim2.new(1, 0, 0, targetH)
+		isAnimating = false
+	else
+		local tween = TweenService:Create(lagPanel, tweenInfo, {
+			Size = UDim2.new(1, 0, 0, targetH)
+		})
+		tween.Completed:Connect(function()
+			isAnimating = false
+		end)
+		tween:Play()
+	end
 end
+
+-- Init: mở ngay không tween
+task.defer(function()
+	setPanelOpen(true, true)
+end)
 
 collapseBtn.MouseButton1Click:Connect(function()
 	setPanelOpen(not panelOpen)
@@ -191,9 +212,9 @@ local dragging, dragStart, startPos = false, nil, nil
 frame.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1
 		or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = true
+		dragging  = true
 		dragStart = input.Position
-		startPos = frame.Position
+		startPos  = frame.Position
 	end
 end)
 
@@ -217,66 +238,58 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- FPS + PING COUNTER
+-- FPS + PING
 -- ============================================================
 local frameCount = 0
-local lastTime = tick()
+local lastTime   = tick()
 
 RunService.RenderStepped:Connect(function()
 	frameCount += 1
-	local now = tick()
+	local now     = tick()
 	local elapsed = now - lastTime
+	if elapsed < 1 then return end
 
-	if elapsed >= 1 then
-		local fps = math.round(frameCount / elapsed)
+	local fps = math.round(frameCount / elapsed)
+	fpsLabel.Text = "FPS: " .. fps
+	fpsLabel.TextColor3 =
+		fps >= 60 and Color3.fromRGB(0, 230, 0)   or
+		fps >= 30 and Color3.fromRGB(255, 195, 0) or
+		Color3.fromRGB(255, 50, 50)
 
-		fpsLabel.Text = "FPS: " .. fps
-		if fps >= 60 then
-			fpsLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-		elseif fps >= 30 then
-			fpsLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
-		else
-			fpsLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-		end
-
-		local ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+	local ok, ping = pcall(function()
+		return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+	end)
+	if ok then
 		pingLabel.Text = "Ping: " .. math.round(ping) .. "ms"
-		if ping < 80 then
-			pingLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-		elseif ping < 150 then
-			pingLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
-		else
-			pingLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-		end
-
-		frameCount = 0
-		lastTime = now
+		pingLabel.TextColor3 =
+			ping < 80  and Color3.fromRGB(0, 230, 0)   or
+			ping < 150 and Color3.fromRGB(255, 195, 0) or
+			Color3.fromRGB(255, 50, 50)
 	end
+
+	frameCount = 0
+	lastTime   = now
 end)
 
 -- ============================================================
--- LAG REDUCER NHẸ (như cũ)
+-- LAG REDUCER NHẸ
 -- ============================================================
 local function applyLagReduction()
 	settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
 	Lighting.GlobalShadows = false
 	Lighting.FogEnd = 9e9
-
-	for _, effect in ipairs(Lighting:GetChildren()) do
-		if effect:IsA("BloomEffect") or effect:IsA("BlurEffect")
-			or effect:IsA("SunRaysEffect") or effect:IsA("ColorCorrectionEffect")
-			or effect:IsA("DepthOfFieldEffect") then
-			effect.Enabled = false
+	for _, e in ipairs(Lighting:GetChildren()) do
+		if e:IsA("BloomEffect") or e:IsA("BlurEffect") or e:IsA("SunRaysEffect")
+			or e:IsA("ColorCorrectionEffect") or e:IsA("DepthOfFieldEffect") then
+			e.Enabled = false
 		end
 	end
-
 	workspace.StreamingEnabled = true
-
-	local count = 0
+	local n = 0
 	for _, obj in ipairs(workspace:GetDescendants()) do
-		if obj:IsA("BasePart") and count < 500 then
+		if obj:IsA("BasePart") and n < 500 then
 			obj.CastShadow = false
-			count += 1
+			n += 1
 		end
 	end
 end
@@ -284,90 +297,77 @@ end
 local function resetQuality()
 	settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
 	Lighting.GlobalShadows = true
-
-	for _, effect in ipairs(Lighting:GetChildren()) do
-		if effect:IsA("BloomEffect") or effect:IsA("BlurEffect")
-			or effect:IsA("SunRaysEffect") or effect:IsA("ColorCorrectionEffect")
-			or effect:IsA("DepthOfFieldEffect") then
-			effect.Enabled = true
+	for _, e in ipairs(Lighting:GetChildren()) do
+		if e:IsA("BloomEffect") or e:IsA("BlurEffect") or e:IsA("SunRaysEffect")
+			or e:IsA("ColorCorrectionEffect") or e:IsA("DepthOfFieldEffect") then
+			e.Enabled = true
 		end
 	end
 end
 
 -- ============================================================
--- NHE ÁP DỤNG: Xoá vật thể (ẩn hết Decal, Texture, MeshPart nhỏ...)
--- Giữ lại character của player & baseplate
+-- NUKE (batch để không treo)
 -- ============================================================
-local nukeEnabled = false
+local BATCH = 80  -- xử lý bao nhiêu obj mỗi frame
 
-local KEEP_TAGS = {
-	"HumanoidRootPart", "Torso", "Head",
-	"UpperTorso", "LowerTorso",
-	"LeftUpperArm", "LeftLowerArm", "LeftHand",
-	"RightUpperArm", "RightLowerArm", "RightHand",
-	"LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
-	"RightUpperLeg", "RightLowerLeg", "RightFoot",
-}
-
-local function isCharacterPart(obj)
+local function isCharPart(obj)
 	for _, p in ipairs(Players:GetPlayers()) do
-		local char = p.Character
-		if char and obj:IsDescendantOf(char) then
-			return true
-		end
+		if p.Character and obj:IsDescendantOf(p.Character) then return true end
 	end
 	return false
 end
 
 local function applyNuke()
 	hiddenObjects = {}
-	for _, obj in ipairs(workspace:GetDescendants()) do
-		-- Bỏ qua character của tất cả player
-		if isCharacterPart(obj) then continue end
+	local all = workspace:GetDescendants()
+	local i   = 1
+	task.spawn(function()
+		while i <= #all do
+			local batch_end = math.min(i + BATCH - 1, #all)
+			for j = i, batch_end do
+				local obj = all[j]
+				if not obj or not obj.Parent then continue end
+				if isCharPart(obj) then continue end
 
-		-- Ẩn Decal, Texture, ParticleEmitter, Trail, Beam (nặng GPU)
-		if obj:IsA("Decal") or obj:IsA("Texture")
-			or obj:IsA("ParticleEmitter") or obj:IsA("Trail")
-			or obj:IsA("Beam") or obj:IsA("SelectionBox")
-			or obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
-			if obj.Enabled ~= nil and obj.Enabled then
-				obj.Enabled = false
-				table.insert(hiddenObjects, {obj = obj, prop = "Enabled"})
-			elseif obj:IsA("Decal") or obj:IsA("Texture") then
-				obj.Transparency = 1
-				table.insert(hiddenObjects, {obj = obj, prop = "Transparency", val = 0})
+				if obj:IsA("Decal") or obj:IsA("Texture") then
+					if obj.Transparency < 1 then
+						table.insert(hiddenObjects, {obj=obj, prop="Transparency", val=obj.Transparency})
+						obj.Transparency = 1
+					end
+				elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam")
+					or obj:IsA("SelectionBox") or obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
+					if obj.Enabled then
+						table.insert(hiddenObjects, {obj=obj, prop="Enabled"})
+						obj.Enabled = false
+					end
+				elseif obj:IsA("BasePart") then
+					local n = obj.Name:lower()
+					if n == "baseplate" or n == "spawnlocation" then continue end
+					if obj.Transparency < 1 then
+						table.insert(hiddenObjects, {obj=obj, prop="Transparency", val=obj.Transparency})
+						obj.Transparency = 1
+						obj.CastShadow   = false
+					end
+				elseif obj:IsA("Sound") and obj.Playing then
+					obj:Stop()
+					table.insert(hiddenObjects, {obj=obj, prop="Sound"})
+				end
 			end
-
-		-- Ẩn BasePart không phải baseplate (ẩn thay vì xoá để restore được)
-		elseif obj:IsA("BasePart") then
-			local name = obj.Name:lower()
-			-- Giữ lại baseplate và SpawnLocation
-			if name == "baseplate" or name == "spawnlocation" then continue end
-			if not obj.Locked and obj.Transparency < 1 then
-				obj.Transparency = 1
-				obj.CastShadow = false
-				table.insert(hiddenObjects, {obj = obj, prop = "Transparency", val = obj.Transparency})
-			end
-
-		-- Xoá Sound để giảm tải audio
-		elseif obj:IsA("Sound") and obj.Playing then
-			obj:Stop()
-			table.insert(hiddenObjects, {obj = obj, prop = "Sound"})
+			i = batch_end + 1
+			task.wait()  -- nhường frame, không treo
 		end
-	end
+	end)
 end
 
 local function restoreNuke()
 	for _, entry in ipairs(hiddenObjects) do
 		local obj = entry.obj
 		if not obj or not obj.Parent then continue end
-
 		if entry.prop == "Enabled" then
 			obj.Enabled = true
 		elseif entry.prop == "Transparency" then
 			obj.Transparency = entry.val or 0
 		end
-		-- Sound không auto resume, để tự nhiên
 	end
 	hiddenObjects = {}
 end
@@ -380,11 +380,11 @@ lagBtn.MouseButton1Click:Connect(function()
 	if lagEnabled then
 		applyLagReduction()
 		lagBtn.Text = "✅ Đang Giảm Lag"
-		lagBtn.BackgroundColor3 = Color3.fromRGB(30, 130, 30)
+		lagBtn.BackgroundColor3 = Color3.fromRGB(25, 110, 25)
 	else
 		resetQuality()
 		lagBtn.Text = "⚡ Bật Giảm Lag"
-		lagBtn.BackgroundColor3 = Color3.fromRGB(40, 100, 40)
+		lagBtn.BackgroundColor3 = Color3.fromRGB(35, 90, 35)
 	end
 end)
 
@@ -393,22 +393,21 @@ nukeBtn.MouseButton1Click:Connect(function()
 	if nukeEnabled then
 		applyNuke()
 		nukeBtn.Text = "✅ Đã Xoá Vật Thể"
-		nukeBtn.BackgroundColor3 = Color3.fromRGB(160, 30, 30)
+		nukeBtn.BackgroundColor3 = Color3.fromRGB(150, 25, 25)
 	else
 		restoreNuke()
 		nukeBtn.Text = "💣 Xoá Vật Thể (Mạnh)"
-		nukeBtn.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+		nukeBtn.BackgroundColor3 = Color3.fromRGB(110, 35, 35)
 	end
 end)
 
 resetBtn.MouseButton1Click:Connect(function()
-	-- Reset tất cả
-	lagEnabled = false
+	lagEnabled  = false
 	nukeEnabled = false
 	resetQuality()
 	restoreNuke()
-	lagBtn.Text = "⚡ Bật Giảm Lag"
-	lagBtn.BackgroundColor3 = Color3.fromRGB(40, 100, 40)
+	lagBtn.Text  = "⚡ Bật Giảm Lag"
+	lagBtn.BackgroundColor3  = Color3.fromRGB(35, 90, 35)
 	nukeBtn.Text = "💣 Xoá Vật Thể (Mạnh)"
-	nukeBtn.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+	nukeBtn.BackgroundColor3 = Color3.fromRGB(110, 35, 35)
 end)
